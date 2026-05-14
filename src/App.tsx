@@ -55,6 +55,7 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
   const [bgColor, setBgColor] = useState('#000000');
   const [bgOpacity, setBgOpacity] = useState(0.8);
   const [showIndicator, setShowIndicator] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(true);
   
   // --- UI State ---
   const [showSidebar, setShowSidebar] = useState(true);
@@ -99,6 +100,29 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
     setIsPlaying(false);
     scrollPosRef.current = 0;
     if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+  };
+
+  // --- Touch Gestures for Font Size (Simple version) ---
+  const lastTouchDistance = useRef<number | null>(null);
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].pageX - e.touches[1].pageX,
+        e.touches[0].pageY - e.touches[1].pageY
+      );
+      if (lastTouchDistance.current !== null) {
+        const delta = dist - lastTouchDistance.current;
+        if (Math.abs(delta) > 5) {
+          setFontSize(prev => Math.min(120, Math.max(16, prev + (delta > 0 ? 2 : -2))));
+          lastTouchDistance.current = dist;
+        }
+      } else {
+        lastTouchDistance.current = dist;
+      }
+    }
+  };
+  const handleTouchEnd = () => {
+    lastTouchDistance.current = null;
   };
 
   // --- Camera Logic ---
@@ -175,9 +199,9 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
   // Aspect Ratio Helper
   const getAspectClass = () => {
     switch (aspectRatio) {
-      case '16:9': return 'aspect-video w-full max-w-4xl';
-      case '9:16': return 'aspect-[9/16] h-[90vh] max-h-[800px] w-auto';
-      case '1:1': return 'aspect-square w-full max-w-[600px] h-auto';
+      case '16:9': return 'aspect-video w-full max-w-4xl max-h-[60vh]';
+      case '9:16': return 'aspect-[9/16] h-[92vh] max-h-[900px] w-auto max-w-[95vw] mobile-full';
+      case '1:1': return 'aspect-square w-full max-w-[600px] h-auto max-h-[70vh]';
       default: return 'w-full h-full';
     }
   };
@@ -188,10 +212,10 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
       <AnimatePresence>
         {showSidebar && (
           <motion.div 
-            initial={{ x: -320 }}
+            initial={{ x: -350 }}
             animate={{ x: 0 }}
-            exit={{ x: -320 }}
-            className="fixed lg:relative z-50 w-[320px] h-full bg-[#1d1d1f] border-r border-[#424245] flex flex-col shadow-2xl"
+            exit={{ x: -350 }}
+            className="fixed lg:relative z-50 w-[85vw] max-w-[320px] h-full bg-[#1d1d1f] border-r border-[#424245] flex flex-col shadow-2xl safe-p-top"
           >
             <div className="p-6 flex justify-between items-center border-b border-[#424245]">
               <h1 className="text-xl font-semibold tracking-tight">Teleprompter Pro</h1>
@@ -447,7 +471,11 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
         )}
 
         {/* Teleprompter Container */}
-        <div className={`relative overflow-hidden shadow-2xl transition-all duration-500 ease-in-out ${getAspectClass()}`}>
+        <div 
+          className={`relative overflow-hidden shadow-2xl transition-all duration-500 ease-in-out ${getAspectClass()}`}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           {/* Camera Layer */}
           {cameraStream && (
             <video 
@@ -480,12 +508,15 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
           {/* Text Container */}
           <div 
             ref={scrollContainerRef}
-            className="absolute inset-0 overflow-y-scroll scrollbar-none flex flex-col z-10 px-6 sm:px-12 md:px-20 text-center select-none"
+            className="absolute inset-0 overflow-y-scroll scrollbar-none flex flex-col z-10 px-8 sm:px-16 md:px-24 text-center select-none"
             style={{ 
               transform: `scale(${mirrorH ? -1 : 1}, ${mirrorV ? -1 : 1})`,
               wordBreak: 'break-word',
-              overflowWrap: 'break-word'
+              overflowWrap: 'break-word',
+              paddingLeft: aspectRatio === '9:16' ? '15%' : undefined,
+              paddingRight: aspectRatio === '9:16' ? '15%' : undefined,
             }}
+            onDoubleClick={() => setIsPlaying(!isPlaying)}
           >
             {/* Initial Buffer */}
             <div className="min-h-[50vh]" />
@@ -507,37 +538,52 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
         </div>
 
         {/* Bottom Floating Controls */}
-        <div className="absolute bottom-10 z-40 flex items-center gap-4 p-2 bg-white/10 backdrop-blur-xl rounded-full border border-white/20 shadow-2xl">
-          <button 
-            onClick={resetScroll}
-            className="p-4 hover:bg-white/10 rounded-full text-white/70 hover:text-white transition-all active:scale-90"
-            title="Recomeçar"
-          >
-            <RotateCcw size={24} />
-          </button>
-          
-          <button 
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="w-16 h-16 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg shadow-blue-900/40 transition-all active:scale-95"
-            title={isPlaying ? 'Pausar' : 'Iniciar'}
-          >
-            {isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
-          </button>
+        <AnimatePresence>
+          {controlsVisible && (
+            <motion.div 
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 100, opacity: 0 }}
+              className="absolute bottom-10 z-40 flex items-center gap-2 sm:gap-4 p-1.5 sm:p-2 bg-white/5 backdrop-blur-2xl rounded-full border border-white/10 shadow-2xl safe-m-bottom"
+            >
+              <button 
+                onClick={resetScroll}
+                className="p-4 hover:bg-white/10 rounded-full text-white/70 hover:text-white transition-all active:scale-90"
+                title="Recomeçar"
+              >
+                <RotateCcw size={24} />
+              </button>
+              
+              <button 
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center bg-primary hover:bg-button-hover text-white rounded-full shadow-lg shadow-blue-900/40 transition-all active:scale-95"
+                title={isPlaying ? 'Pausar' : 'Iniciar'}
+              >
+                {isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
+              </button>
 
-          <div className="flex flex-col items-center px-4 border-l border-white/10">
-            <span className="text-[10px] text-white/50 uppercase tracking-widest font-bold mb-0.5">Speed</span>
-            <div className="flex items-center gap-4">
-              <button onClick={() => setSpeed(Math.max(1, speed - 0.5))} className="hover:text-blue-400"><ChevronDown size={18} /></button>
-              <span className="text-lg font-mono font-bold w-6 text-center">{speed.toFixed(1)}</span>
-              <button onClick={() => setSpeed(Math.min(20, speed + 0.5))} className="hover:text-blue-400"><ChevronUp size={18} /></button>
-            </div>
-          </div>
-        </div>
+              <div className="flex flex-col items-center px-4 border-l border-white/10 min-w-[100px]">
+                <span className="text-[10px] text-white/50 uppercase tracking-widest font-bold mb-0.5">Speed</span>
+                <div className="flex items-center gap-4">
+                  <button onClick={() => setSpeed(Math.max(1, speed - 0.5))} className="p-2 hover:text-blue-400 active:scale-110"><ChevronDown size={20} /></button>
+                  <span className="text-lg font-mono font-bold w-6 text-center">{speed.toFixed(1)}</span>
+                  <button onClick={() => setSpeed(Math.min(20, speed + 0.5))} className="p-2 hover:text-blue-400 active:scale-110"><ChevronUp size={20} /></button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Visibility Toggle Overlay (Desktop only maybe, or tap anywhere) */}
+        <div 
+          className="absolute inset-0 z-30 cursor-pointer lg:hidden"
+          onClick={() => setControlsVisible(!controlsVisible)}
+        />
 
         {/* Corner Indicator Toggle */}
         <button 
           onClick={() => setShowIndicator(!showIndicator)}
-          className={`absolute bottom-6 right-6 z-40 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all ${showIndicator ? 'bg-green-600 border-green-500 text-white' : 'bg-white/10 border-white/10 text-white/50'}`}
+          className={`absolute bottom-6 right-6 z-40 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all hidden sm:block ${showIndicator ? 'bg-green-600 border-green-500 text-white' : 'bg-white/10 border-white/10 text-white/50'}`}
         >
           Linha Guia: {showIndicator ? 'On' : 'Off'}
         </button>
@@ -551,14 +597,29 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: #424245; border-radius: 10px; }
         
+        @supports (padding-top: env(safe-area-inset-top)) {
+          .safe-p-top { padding-top: env(safe-area-inset-top); }
+          .safe-m-bottom { margin-bottom: env(safe-area-inset-bottom); }
+        }
+
+        @media (max-width: 640px) {
+          .mobile-full {
+             width: 100vw !important;
+             height: 100vh !important;
+             max-height: 100vh !important;
+             border-radius: 0 !important;
+          }
+        }
+
         input[type="range"]::-webkit-slider-thumb {
           -webkit-appearance: none;
-          height: 16px;
-          width: 16px;
+          height: 24px;
+          width: 24px;
           border-radius: 50%;
           background: #0071e3;
           cursor: pointer;
-          border: 2px solid #1d1d1f;
+          border: 3px solid #1d1d1f;
+          box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
 
         @keyframes pulse-red {
