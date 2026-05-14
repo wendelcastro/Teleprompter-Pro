@@ -1,0 +1,6 @@
+{
+  "name": "Teleprompter Pro",
+  "description": "A professional-grade teleprompter for creators with integrated video recording, multiple aspect ratios, and full aesthetic controls.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": []
+}
