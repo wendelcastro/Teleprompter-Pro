@@ -65,7 +65,11 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [recordedMimeType, setRecordedMimeType] = useState<string>('');
+  const [recordDuration, setRecordDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const timerRef = useRef<number | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollPosRef = useRef(0);
@@ -74,20 +78,36 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
   // --- Animation Logic ---
   const scroll = useCallback((time: number) => {
     if (isPlaying && scrollContainerRef.current) {
-      // Speed factor: adjust as needed. Lower speed = smoother but needs fine tuning.
-      // Speed 1: ~1px per frame? No, way too fast. 
-      // Let's use a base increment.
       const increment = (speed * 0.1);
       scrollPosRef.current += increment;
       scrollContainerRef.current.scrollTop = scrollPosRef.current;
       
-      // Stop if reached bottom
       if (scrollPosRef.current >= scrollContainerRef.current.scrollHeight - scrollContainerRef.current.clientHeight + 100) {
         setIsPlaying(false);
       }
     }
     requestRef.current = requestAnimationFrame(scroll);
   }, [isPlaying, speed]);
+
+  useEffect(() => {
+    if (isRecording) {
+      setRecordDuration(0);
+      timerRef.current = window.setInterval(() => {
+        setRecordDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(scroll);
@@ -125,20 +145,33 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
     lastTouchDistance.current = null;
   };
 
+  // Re-attach video stream if component re-renders
+  useEffect(() => {
+    if (cameraStream && videoRef.current && !videoRef.current.srcObject) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
+
   // --- Camera Logic ---
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' }, 
+      // Constraints for mobile/iPhone optimization
+      const constraints = {
+        video: { 
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
         audio: true 
-      });
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       setCameraStream(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (err) {
       console.error("Camera access denied", err);
-      alert("Não foi possível acessar a câmera. Verifique as permissões.");
+      alert("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
     }
   };
 
@@ -151,15 +184,28 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
 
   // --- Recording Logic ---
   const startRecording = () => {
-    if (!cameraStream) return;
+    if (!cameraStream) {
+      alert("Ative a câmera antes de gravar.");
+      return;
+    }
     setRecordedChunks([]);
     
-    // Attempt to find a supported mime type
-    const mimeTypes = ['video/webm;codecs=vp9', 'video/webm', 'video/mp4'];
+    // Attempt to find a supported mime type - prioritizing MP4 for iOS/Mobile compatibility
+    const mimeTypes = [
+      'video/mp4;codecs=avc1', 
+      'video/mp4', 
+      'video/webm;codecs=h264', 
+      'video/webm;codecs=vp9', 
+      'video/webm'
+    ];
     const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+    setRecordedMimeType(mimeType);
     
     try {
-      const recorder = new MediaRecorder(cameraStream, { mimeType });
+      const recorder = new MediaRecorder(cameraStream, { 
+        mimeType,
+        videoBitsPerSecond: 2500000 // 2.5 Mbps for decent quality
+      });
       mediaRecorderRef.current = recorder;
       
       recorder.ondataavailable = (e) => {
@@ -172,7 +218,7 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
       setIsRecording(true);
     } catch (err) {
       console.error("Recording error", err);
-      alert("Erro ao iniciar gravação. Seu navegador pode não suportar esta funcionalidade.");
+      alert("Erro ao iniciar gravação: " + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -184,16 +230,31 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
   };
 
   const downloadVideo = () => {
-    if (recordedChunks.length === 0) return;
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    if (recordedChunks.length === 0) {
+      alert("Nenhuma gravação encontrada para baixar.");
+      return;
+    }
+    
+    const type = recordedMimeType || recordedChunks[0].type || 'video/mp4';
+    const extension = type.includes('mp4') ? 'mp4' : 'webm';
+    
+    const blob = new Blob(recordedChunks, { type });
     const url = URL.createObjectURL(blob);
+    
+    // For iOS compatibility, sometimes a direct link works better if a.click fails
     const a = document.createElement('a');
     a.href = url;
-    a.download = `teleprompter-recording-${Date.now()}.webm`;
+    a.download = `teleprompter-recording-${Date.now()}.${extension}`;
+    a.style.display = 'none';
     document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    
+    // Small timeout to ensure DOM interaction is registered
+    setTimeout(() => {
+      a.click();
+      document.body.removeChild(a);
+      // Don't revoke immediately on mobile to ensure the transfer completes
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, 100);
   };
 
   // Aspect Ratio Helper
@@ -466,7 +527,7 @@ Comece agora a gravar seus vídeos com muito mais profissionalismo!`);
         {isRecording && (
           <div className="absolute top-6 right-6 z-40 flex items-center gap-2 px-4 py-2 bg-red-600/90 backdrop-blur-md rounded-full shadow-lg">
             <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-widest">Gravando</span>
+            <span className="text-xs font-bold uppercase tracking-widest">{formatTime(recordDuration)}</span>
           </div>
         )}
 
